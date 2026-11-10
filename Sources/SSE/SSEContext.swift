@@ -1,5 +1,3 @@
-import Vapor
-
 #if canImport(FoundationEssentials)
 import FoundationEssentials
 #else
@@ -19,12 +17,11 @@ public struct SSEStreamClosedError: Error, Sendable, Equatable {
 ///
 /// ## Concurrency
 ///
-/// `SSEContext` is `Sendable`, and sending from several tasks at once is safe.
-/// A common case is a keep-alive heartbeat running alongside the main event
-/// stream:
+/// `SSEContext` is `Sendable`, and it is safe to send from more than one task at the same time.
+/// A common example is a keep-alive task that runs while a second task sends the events:
 ///
 /// ```swift
-/// req.sse { sse in
+/// Response.sse { sse in
 ///     await withTaskGroup(of: Void.self) { group in
 ///         group.addTask { for await event in stream { try? await sse.send(event) } }
 ///         group.addTask { while true { try? await sse.sendComment("keep-alive") } }
@@ -32,17 +29,15 @@ public struct SSEStreamClosedError: Error, Sendable, Equatable {
 /// }
 /// ```
 ///
-/// Vapor lends the response body writer to a single task for the life of the
-/// stream, so sends don't touch the connection directly. Each one hands its
-/// serialized event to that task and waits until the event has been written.
-/// Events are written one at a time and each is a single write, so two tasks
-/// sending at the same time cannot splice one event into the middle of another.
+/// The web framework lends the response body writer to one task for the life of the stream.
+/// Thus a send does not use the connection directly. A send gives its serialized event to
+/// that task and waits until the task writes the event. The task writes one event at a time,
+/// and each event is one write. Two tasks that send at the same time cannot put one event
+/// into the middle of a different event.
 ///
-/// - Important: What concurrent sending does *not* give you is ordering. Two
-///   tasks racing to send have no defined order between them, so if you are
-///   stamping `id` values for `Last-Event-ID` resume, send those from a single
-///   task. Sequential `await`s from one task are always ordered, because each
-///   send completes before the next begins.
+/// - Important: Concurrent sends have no defined order. If you set `id` values for
+///   `Last-Event-ID` resume, send those events from one task. Sequential `await`s from one
+///   task always keep their order, because each send completes before the next send starts.
 public final class SSEContext: Sendable {
     /// A serialized event waiting to be written, and the send waiting on it.
     struct Outgoing: Sendable {
@@ -58,40 +53,46 @@ public final class SSEContext: Sendable {
         self.encoder = encoder
     }
 
-    /// Runs `handler` against a fresh context, writing everything it sends to `writer`.
+    /// Runs `handler` with a new context and gives each event that the handler sends to `write`.
     ///
-    /// The handler runs in a child task while this task keeps the writer, which
-    /// is borrowed and can't be captured by another task. Returns once the
-    /// handler has finished and every event it sent has been written. A handler
-    /// error is rethrown. A write error is rethrown too, after the handler has
-    /// been cancelled and has unwound.
+    /// The handler runs in a child task. The task that calls this function calls `write`,
+    /// because a web framework lends its body writer to that task only.
+    ///
+    /// This function returns after the handler returns and `write` has each event.
+    /// If the handler throws, this function throws the same error.
+    /// If `write` throws, this function cancels the handler and waits for it.
+    /// Then this function throws the write error.
+    ///
+    /// - Parameters:
+    ///   - encoder: The `JSONEncoder` for the `Encodable` values that the handler sends.
+    ///   - handler: The closure that sends the events.
+    ///   - write: An operation that writes one serialized event to the connection.
     nonisolated(nonsending) static func run(
-        writer: borrowing any HTTPBodyWriter & ~Escapable,
         encoder: JSONEncoder,
-        _ handler: @Sendable @escaping (SSEContext) async throws -> Void
+        handler: @Sendable @escaping (SSEContext) async throws -> Void,
+        write: nonisolated(nonsending) (String) async throws -> Void
     ) async throws {
         let (events, outbox) = AsyncStream<Outgoing>.makeStream()
         let context = SSEContext(outbox: outbox, encoder: encoder)
 
-        // `async let` rather than a task group: a group's body is a closure, and
-        // capturing the borrowed writer in a closure would consume it. Leaving
-        // this scope by throwing cancels the handler and waits for it.
+        // The handler runs in a child task, so this task is free to run the write loop.
+        // If this scope throws, the `async let` cancels the handler and waits for it.
         async let handlerDone: Void = {
-            // Ending the outbox ends the write loop below, once it has drained
-            // what was already sent.
+            // The end of the outbox stops the write loop below.
+            // The loop first writes the events that the outbox already has.
             defer { outbox.finish() }
             try await handler(context)
         }()
 
         for await event in events {
             do {
-                try await writer.write(event.text)
+                try await write(event.text)
                 event.written.resume()
             } catch {
                 event.written.resume(throwing: error)
-                // The connection is gone. Close the outbox so later sends fail
-                // straight away, then fail anything already queued, so no send
-                // is left waiting on a write that will never happen.
+                // The connection is closed. Close the outbox so that each later send
+                // throws immediately. Then fail each event in the queue, so that no
+                // send waits for a write that cannot occur.
                 outbox.finish()
                 for await queued in events {
                     queued.written.resume(throwing: error)

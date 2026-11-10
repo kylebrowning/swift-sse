@@ -1,3 +1,4 @@
+#if Vapor
 import Testing
 import Vapor
 import VaporTesting
@@ -37,8 +38,8 @@ private struct ClientWentAway: Error {}
 /// These tests pin that invariant down. If a future change ever splits an event
 /// across multiple writes, concurrent senders could splice one event into the
 /// middle of another, and the write-count assertions below start failing.
-@Suite("SSE concurrency guarantees")
-struct SSEConcurrencyTests {
+@Suite("SSE concurrency guarantees with Vapor")
+struct VaporConcurrencyTests {
     @Test func eachSendPerformsExactlyOneWrite() async throws {
         struct Payload: Codable, Sendable { var status: String }
 
@@ -289,3 +290,4 @@ struct SSEConcurrencyTests {
         }
     }
 }
+#endif
