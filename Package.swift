@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "vapor-sse",
+    name: "swift-sse",
     platforms: [
         .macOS("26.2"),
         .iOS("26.2"),

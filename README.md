@@ -1,4 +1,4 @@
-# vapor-sse
+# swift-sse
 
 Server-Sent Events (SSE) for [Vapor](https://github.com/vapor/vapor) and [Hummingbird](https://github.com/hummingbird-project/hummingbird).
 
@@ -11,7 +11,7 @@ The core of the `SSE` module imports no web framework. A package trait adds the 
 
 ## Requirements
 
-| vapor-sse | Vapor | Hummingbird | Swift | Platforms |
+| swift-sse | Vapor | Hummingbird | Swift | Platforms |
 |-----------|-------|-------------|-------|-----------|
 | 2.x | 5.0.0-beta.4+ | 2.0.0+ | 6.4 with Vapor, 6.2 with Hummingbird | macOS 26.2, iOS 26.2 |
 | 1.x | 4.121.3+ | Not supported | 6.0 | macOS 10.15, iOS 13 |
@@ -26,15 +26,15 @@ Vapor 5 needs Swift 6.4. If you enable only the `Hummingbird` trait, the package
 
 ### Vapor
 
-Add `vapor-sse` to your `Package.swift`. The `Vapor` trait is the default.
+Add `swift-sse` to your `Package.swift`. The `Vapor` trait is the default.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/kylebrowning/vapor-sse.git", from: "2.0.0-beta"),
+    .package(url: "https://github.com/kylebrowning/swift-sse.git", from: "2.0.0-beta"),
 ],
 targets: [
     .target(name: "App", dependencies: [
-        .product(name: "SSE", package: "vapor-sse"),
+        .product(name: "SSE", package: "swift-sse"),
     ]),
 ]
 ```
@@ -46,17 +46,23 @@ Enable the `Hummingbird` trait. A trait list replaces the default trait, so Swif
 ```swift
 dependencies: [
     .package(
-        url: "https://github.com/kylebrowning/vapor-sse.git",
+        url: "https://github.com/kylebrowning/swift-sse.git",
         from: "2.0.0-beta",
         traits: ["Hummingbird"]
     ),
 ],
 targets: [
     .target(name: "App", dependencies: [
-        .product(name: "SSE", package: "vapor-sse"),
+        .product(name: "SSE", package: "swift-sse"),
     ]),
 ]
 ```
+
+### The old name
+
+The name of this repository was `vapor-sse` before version 2. The old URL redirects to this repository.
+
+If your manifest uses the old URL, keep `package: "vapor-sse"` in the product dependency. SwiftPM takes the package name from the URL.
 
 ## Usage
 
