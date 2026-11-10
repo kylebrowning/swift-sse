@@ -1,10 +1,11 @@
+#if Vapor
 import Testing
 import Vapor
 import VaporTesting
 @testable import SSE
 
-@Suite("SSE integration")
-struct SSEIntegrationTests {
+@Suite("SSE integration with Vapor")
+struct VaporIntegrationTests {
     @Test func sseResponseHeaders() async throws {
         try await withApp { app in
             app.get("events") { req in
@@ -167,3 +168,4 @@ struct SSEIntegrationTests {
         }
     }
 }
+#endif
