@@ -13,12 +13,14 @@ The core of the `SSE` module imports no web framework. A package trait adds the 
 
 | vapor-sse | Vapor | Hummingbird | Swift | Platforms |
 |-----------|-------|-------------|-------|-----------|
-| 2.x | 5.0.0-beta.4+ | 2.0.0+ | 6.4 | macOS 26.2, iOS 26.2 |
+| 2.x | 5.0.0-beta.4+ | 2.0.0+ | 6.4 with Vapor, 6.2 with Hummingbird | macOS 26.2, iOS 26.2 |
 | 1.x | 4.121.3+ | Not supported | 6.0 | macOS 10.15, iOS 13 |
 
 The Vapor API is the same in 1.x and 2.x. Vapor code for 1.x compiles on 2.x with no changes.
 
 Vapor 5 sets the platform minimums for 2.x. These minimums also apply when you enable only the `Hummingbird` trait.
+
+Vapor 5 needs Swift 6.4. If you enable only the `Hummingbird` trait, the package builds with Swift 6.2 or later.
 
 ## Installation
 

@@ -53,55 +53,69 @@ public final class SSEContext: Sendable {
         self.encoder = encoder
     }
 
-    /// Runs `handler` with a new context and gives each event that the handler sends to `write`.
+    /// One SSE response in progress.
     ///
-    /// The handler runs in a child task. The task that calls this function calls `write`,
-    /// because a web framework lends its body writer to that task only.
+    /// A session connects the handler task to the task that writes to the connection.
+    /// A web framework lends its body writer to one task only, so that task runs the write loop.
+    /// The handler runs in a child task.
     ///
-    /// This function returns after the handler returns and `write` has each event.
-    /// If the handler throws, this function throws the same error.
-    /// If `write` throws, this function cancels the handler and waits for it.
-    /// Then this function throws the write error.
+    /// Each framework adapter runs the write loop in this pattern:
     ///
-    /// - Parameters:
-    ///   - encoder: The `JSONEncoder` for the `Encodable` values that the handler sends.
-    ///   - handler: The closure that sends the events.
-    ///   - write: An operation that writes one serialized event to the connection.
-    nonisolated(nonsending) static func run(
-        encoder: JSONEncoder,
-        handler: @Sendable @escaping (SSEContext) async throws -> Void,
-        write: nonisolated(nonsending) (String) async throws -> Void
-    ) async throws {
-        let (events, outbox) = AsyncStream<Outgoing>.makeStream()
-        let context = SSEContext(outbox: outbox, encoder: encoder)
+    /// ```swift
+    /// let session = SSEContext.Session(encoder: encoder)
+    /// async let handlerDone: Void = session.run(handler)
+    /// for await event in session.events {
+    ///     do {
+    ///         try await writer.write(event.text)
+    ///         event.written.resume()
+    ///     } catch {
+    ///         await session.fail(event, with: error)
+    ///         throw error
+    ///     }
+    /// }
+    /// try await handlerDone
+    /// ```
+    ///
+    /// If the write loop throws, the `async let` cancels the handler and waits for it.
+    ///
+    /// The loop is in each adapter and not in one shared function. The Vapor writer needs a
+    /// `nonisolated(nonsending)` caller, and Swift 6.2 cannot call the Hummingbird writer from
+    /// that type of function.
+    struct Session: Sendable {
+        /// The events that the handler sends. The adapter must write them in this order.
+        let events: AsyncStream<Outgoing>
 
-        // The handler runs in a child task, so this task is free to run the write loop.
-        // If this scope throws, the `async let` cancels the handler and waits for it.
-        async let handlerDone: Void = {
-            // The end of the outbox stops the write loop below.
-            // The loop first writes the events that the outbox already has.
-            defer { outbox.finish() }
-            try await handler(context)
-        }()
+        private let outbox: AsyncStream<Outgoing>.Continuation
+        private let context: SSEContext
 
-        for await event in events {
-            do {
-                try await write(event.text)
-                event.written.resume()
-            } catch {
-                event.written.resume(throwing: error)
-                // The connection is closed. Close the outbox so that each later send
-                // throws immediately. Then fail each event in the queue, so that no
-                // send waits for a write that cannot occur.
-                outbox.finish()
-                for await queued in events {
-                    queued.written.resume(throwing: error)
-                }
-                throw error
-            }
+        /// - Parameter encoder: The `JSONEncoder` for the `Encodable` values that the handler sends.
+        init(encoder: JSONEncoder) {
+            let (events, outbox) = AsyncStream<Outgoing>.makeStream()
+            self.events = events
+            self.outbox = outbox
+            self.context = SSEContext(outbox: outbox, encoder: encoder)
         }
 
-        try await handlerDone
+        /// Runs `handler` with the context of this session.
+        ///
+        /// When the handler returns or throws, this function closes the outbox.
+        /// The write loop then stops after it writes the events that the outbox already has.
+        func run(_ handler: @Sendable (SSEContext) async throws -> Void) async throws {
+            defer { outbox.finish() }
+            try await handler(context)
+        }
+
+        /// Fails `event` and each event in the queue. Call this function when a write throws `error`.
+        ///
+        /// This function closes the outbox, so each later send throws immediately.
+        /// Thus no send waits for a write that cannot occur.
+        func fail(_ event: Outgoing, with error: any Error) async {
+            event.written.resume(throwing: error)
+            outbox.finish()
+            for await queued in events {
+                queued.written.resume(throwing: error)
+            }
+        }
     }
 
     /// Sends a ``ServerSentEvent`` to the client.

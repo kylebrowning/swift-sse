@@ -1,4 +1,4 @@
-// swift-tools-version: 6.4
+// swift-tools-version: 6.2
 
 import PackageDescription
 
@@ -13,6 +13,7 @@ let package = Package(
     ],
     // A trait selects the web framework that the `SSE` module supports.
     // SwiftPM does not resolve the framework of a trait that is not enabled.
+    // The `Vapor` trait needs Swift 6.4, because Vapor 5 needs it.
     traits: [
         .trait(name: "Vapor", description: "Adds the SSE API for Vapor 5."),
         .trait(name: "Hummingbird", description: "Adds the SSE API for Hummingbird 2."),

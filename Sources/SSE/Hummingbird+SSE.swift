@@ -45,9 +45,19 @@ extension Response {
                 .cacheControl: "no-cache",
             ],
             body: ResponseBody { writer in
-                try await SSEContext.run(encoder: encoder, handler: handler) { text in
-                    try await writer.write(ByteBuffer(string: text))
+                // See `SSEContext.Session` for the rules of this loop.
+                let session = SSEContext.Session(encoder: encoder)
+                async let handlerDone: Void = session.run(handler)
+                for await event in session.events {
+                    do {
+                        try await writer.write(ByteBuffer(string: event.text))
+                        event.written.resume()
+                    } catch {
+                        await session.fail(event, with: error)
+                        throw error
+                    }
                 }
+                try await handlerDone
                 try await writer.finish(nil)
             }
         )
